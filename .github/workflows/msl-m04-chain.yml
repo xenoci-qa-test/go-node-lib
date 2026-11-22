@@ -1,0 +1,40 @@
+name: mac-sticky-chain-1122
+run-name: msc-${{ github.event.head_commit.message }}
+# mac-sticky-fast (2026-11-22): data kept across the Mac repository disk swap. Each run reads the payload the previous
+# successful run committed (sha256, owner run id, chain length), prints the attach line and the host, then writes a new
+# payload and exits 0 so the disk is committed for the next run. Nothing outside ~/.xenoci-disk/msc is touched.
+on:
+  push:
+    branches: [msl-m04-chain-1123]
+permissions:
+  contents: read
+concurrency:
+  group: msl-m04-chain
+  cancel-in-progress: false
+jobs:
+  mac:
+    runs-on: xenoci-macos
+    timeout-minutes: 10
+    steps:
+      - name: verify and write
+        shell: bash
+        run: |
+          set +e -u
+          M=$HOME/.xenoci-disk; C=$M/msc
+          echo "MSC host=$(scutil --get LocalHostName 2>/dev/null) run=${{ github.run_id }} n=${{ github.event.head_commit.message }}"
+          echo "MSC mount: $(mount | grep -F " on $(cd "$M" && pwd -P) " || echo none)"
+          test -d "$M" || { echo "MSC FAIL no disk"; exit 1; }
+          if [ -f "$C/chain.txt" ]; then
+            last=$(tail -1 "$C/chain.txt"); prun=${last%% *}; psha=$(echo "$last" | cut -d' ' -f2)
+            got=$(shasum -a 256 "$C/payload.bin" | cut -d' ' -f1)
+            echo "MSC prev=$prun expect=$psha got=$got owner=$(cat "$C/owner.txt") chain_len=$(wc -l < "$C/chain.txt" | tr -d ' ')"
+            [ "$got" = "$psha" ] && [ "$(cat "$C/owner.txt")" = "${{ github.repository }} $prun" ] || { echo "MSC FAIL mismatch"; exit 1; }
+            echo "MSC VERIFY_OK"
+          else
+            echo "MSC first run (no chain)"; mkdir -p "$C"
+          fi
+          head -c 8388608 /dev/urandom > "$C/payload.bin"
+          sha=$(shasum -a 256 "$C/payload.bin" | cut -d' ' -f1)
+          echo "${{ github.repository }} ${{ github.run_id }}" > "$C/owner.txt"
+          echo "${{ github.run_id }} $sha $(date -u +%FT%TZ)" >> "$C/chain.txt"
+          sync; echo "MSC wrote sha=$sha"
