@@ -8,12 +8,12 @@ on:
     branches: [msl-m04-chain-1123]
 permissions:
   contents: read
-concurrency:
-  group: msl-m04-chain
-  cancel-in-progress: false
 jobs:
   mac:
     runs-on: xenoci-macos
+    strategy:
+      matrix:
+        k: [1, 2, 3, 4]
     timeout-minutes: 10
     steps:
       - name: verify and write
